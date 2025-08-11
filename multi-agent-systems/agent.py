@@ -68,7 +68,7 @@ agent = CodeAgent(model=model, tools=[VisitWebpageTool(), DuckDuckGoSearchTool()
 
 task = """Find all Batman filming locations in the world, calculate the time to transfer via cargo plane to here (we're in Gotham, 40.7128° N, 74.0060° W), and return them to me as a pandas dataframe.
 Also give me some supercar factories with the same cargo plane transfer time."""
-agent.planning_interval = 4
+
 # Run the agent
 result = agent.run(task)
 
