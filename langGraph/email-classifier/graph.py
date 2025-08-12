@@ -1,8 +1,7 @@
 import os
 from typing import TypedDict, List, Dict, Any, Optional
 from langgraph.graph import StateGraph, START, END
-from langchain_openai import ChatOpenAI
-from langchain_core.messages import HumanMessage
+from langchain_community.llms import Ollama
 
 class EmailState(TypedDict):
     # The email being processed
@@ -24,7 +23,11 @@ class EmailState(TypedDict):
     messages: List[Dict[str, Any]]  # Track conversation with LLM for analysis
 
 # Initialize our LLM
-model = ChatOpenAI(temperature=0)
+model = Ollama(
+    model="qwen2.5:latest",
+    base_url="http://localhost:11434",
+    temperature=0
+)
 
 def read_email(state: EmailState):
     """Alfred reads and logs the incoming email"""
@@ -49,23 +52,32 @@ def classify_email(state: EmailState):
     Subject: {email['subject']}
     Body: {email['body']}
     
-    First, determine if this email is spam. If it is spam, explain why.
-    If it is legitimate, categorize it (inquiry, complaint, thank you, etc.).
+    First, determine if this email is spam. If it is spam, add capital SPAM in the response and then explain why. Enter the spam reason, by writing 'reason:' and then the spam reason follows.
+    If it is legitimate,  add capital LEGITIMATE in the response categorize it (inquiry, complaint, thank you, etc.).
     """
     
     # Call the LLM
-    messages = [HumanMessage(content=prompt)]
-    response = model.invoke(messages)
+    response_text = model.invoke(prompt)
+    # print('response to the email is: ', response)
     
-    # Simple logic to parse the response (in a real app, you'd want more robust parsing)
-    response_text = response.content.lower()
-    is_spam = "spam" in response_text and "not spam" not in response_text
-    
+    # print('text: ',response_text)
+    is_spam = "SPAM" in response_text and "LEGITIMATE" not in response_text
+    print('spam or not: ', is_spam)
+
     # Extract a reason if it's spam
     spam_reason = None
-    if is_spam and "reason:" in response_text:
-        spam_reason = response_text.split("reason:")[1].strip()
-    
+    if is_spam:
+        reason_ind = response_text.find("reason:")
+        if reason_ind == -1:
+            reason_ind = response_text.find("Reason:")
+        
+        if reason_ind != -1:
+            # Extract everything after "reason:" or "Reason:"
+            spam_reason = response_text[reason_ind + 6:].strip()
+            # Clean up any extra text after the reason
+            if "\n" in spam_reason:
+                spam_reason = spam_reason.split("\n")[0].strip()
+    print('spam reason: ', spam_reason)
     # Determine category if legitimate
     email_category = None
     if not is_spam:
@@ -78,7 +90,7 @@ def classify_email(state: EmailState):
     # Update messages for tracking
     new_messages = state.get("messages", []) + [
         {"role": "user", "content": prompt},
-        {"role": "assistant", "content": response.content}
+        {"role": "assistant", "content": response_text}
     ]
     
     # Return state updates
@@ -117,18 +129,17 @@ def draft_response(state: EmailState):
     """
     
     # Call the LLM
-    messages = [HumanMessage(content=prompt)]
-    response = model.invoke(messages)
+    response = model.invoke(prompt)
     
     # Update messages for tracking
     new_messages = state.get("messages", []) + [
         {"role": "user", "content": prompt},
-        {"role": "assistant", "content": response.content}
+        {"role": "assistant", "content": response}
     ]
     
     # Return state updates
     return {
-        "email_draft": response.content,
+        "email_draft": response,
         "messages": new_messages
     }
 
@@ -208,6 +219,7 @@ legitimate_result = emailGraph.invoke({
     "email_draft": None,
     "messages": []
 })
+# print('result: ', legitimate_result)
 
 # Process the spam email
 print("\nProcessing spam email...")
@@ -219,3 +231,4 @@ spam_result = emailGraph.invoke({
     "email_draft": None,
     "messages": []
 })
+# print('result: ', spam_result)
